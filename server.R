@@ -16,7 +16,7 @@ library(ROAuth)
 library(RColorBrewer)
 library(tm)
 library(wordcloud)
-library(googleVis)
+# library(googleVis)
 library(ggplot2)
 library(gridExtra)
 
@@ -24,92 +24,99 @@ source("sentiment/R/classify_emotion.R")
 source("sentiment/R/classify_polarity.R")
 source("sentiment/R/create_matrix.R")
 
+CountryWoeid <- fromJSON(txt = "WOEID.json", flatten =TRUE)
+TownList <-    CountryWoeid[CountryWoeid$placeType.name == "Town"    ,  ]
+CountryList <- CountryWoeid[CountryWoeid$placeType.name == "Country" ,  ]
 
 load("twitter.authentication")
 registerTwitterOAuth(twitCred)
 
 shinyServer(
-    function(input, output) {
+    function(input, output, session) {
         r_stats <- reactive({
             QueryResult <- searchTwitteR(input$TwitterQuery, 
-                                         n = input$n_Tweets, 
-                                         since = as.character(input$daterange[1]),
-                                         until = as.character(input$daterange[2]),
-                                         lang = input$lang,
-                                         cainfo = "cacert.pem")
-            #Clean the data into a neat dataframe
-            do.call("rbind", lapply(QueryResult, as.data.frame))
+                                            n = input$n_Tweets, 
+                                            since = as.character(input$daterange[1]),
+                                            until = as.character(input$daterange[2]),
+                                            lang = input$lang,
+                                            cainfo = "cacert.pem")                
             
+            #Clean the data into a neat dataframe
+            do.call("rbind", lapply(QueryResult, as.data.frame))            
         })
         
         output$TwitterQuery <- renderDataTable({
-            withProgress(message = 'Calculation in progress',
-                         detail = 'This may take a while...', value = 0, {
-                             r_stats()[,c("screenName", "text", "created") ]
-                         })
-            
+                    r_stats()[,c("screenName", "text", "created") ]
         })
+
         output$on_Tweets    <- renderPrint({input$n_Tweets})
         output$oid2         <- renderPrint({input$id2})
         output$odate        <- renderPrint({input$daterange})
         
-        # uncomment for local usage
-                output$sentiment <- renderPlot({
-                    withProgress(message = 'Calculation in progress',
-                                 detail = 'This may take a while...', value = 0, {
-                                     TweetSentiments <- r_stats()
-                                 })
-                                
-                    emotion  <- classify_emotion( TweetSentiments[,c("text") ],algorithm="bayes", prior=1.0)
-                    polarity <- classify_polarity(TweetSentiments[,c("text") ],algorithm="bayes", prior=1.0)
-                    emotion  <- as.data.frame(emotion)
-                    polarity <- as.data.frame(polarity)
-                    
-                    TweetSentiments[,17] <- emotion[,7]
-                    TweetSentiments[,18] <- polarity[,4]
-                    
-                    names(TweetSentiments) <- c(
-                        "text", "favorited", "favoriteCount", "replyToSN", "created", "truncated", 
-                        "replyToSID", "id", "replyToUID", "statusSource", "screenName", "retweetCount", 
-                        "isRetweet", "retweeted", "longitude", "latitude", 
-                        "emotion", "polarity"
-                    )
-                                    
-                    EmotionPlot <- ggplot(TweetSentiments, aes(x=emotion))
-                    EmotionPlot <- EmotionPlot + geom_bar(aes(y=..count.., fill=emotion))
-                    PolarityPlot <- ggplot(TweetSentiments, aes(x=polarity))
-                    PolarityPlot <- PolarityPlot + geom_bar(aes(y=..count.., fill=polarity))
-                    Sentiment <- grid.arrange(PolarityPlot, EmotionPlot, ncol = 2)
-                    return(Sentiment)
-                })
+        output$sentiment <- renderPlot({
+            withProgress(message = 'Calculation in progress',
+                         detail = 'This may take a while...', value = 0, {
+                            TweetSentiments <- r_stats()
+        
+                            emotion  <- classify_emotion( TweetSentiments[,c("text") ],algorithm="bayes", prior=1.0)
+                            polarity <- classify_polarity(TweetSentiments[,c("text") ],algorithm="bayes", prior=1.0)
+                            emotion  <- as.data.frame(emotion)
+                            polarity <- as.data.frame(polarity)
+                         }
+            )
+            
+            TweetSentiments[,17] <- emotion[,7]
+            TweetSentiments[,18] <- polarity[,4]
+            
+            names(TweetSentiments) <- c(
+                "text", "favorited", "favoriteCount", "replyToSN", "created", "truncated", 
+                "replyToSID", "id", "replyToUID", "statusSource", "screenName", "retweetCount", 
+                "isRetweet", "retweeted", "longitude", "latitude", 
+                "emotion", "polarity"
+            )
+            
+            EmotionPlot <- ggplot(TweetSentiments, aes(x=emotion))
+            EmotionPlot <- EmotionPlot + geom_bar(aes(y=..count.., fill=emotion))
+            PolarityPlot <- ggplot(TweetSentiments, aes(x=polarity))
+            PolarityPlot <- PolarityPlot + geom_bar(aes(y=..count.., fill=polarity))
+            Sentiment <- grid.arrange(PolarityPlot, EmotionPlot, ncol = 2)
+            return(Sentiment)
+        })
         
         output$TrendingTopics <- renderDataTable({
-            TrendLocation <- closestTrendLocations(input$latitude, input$longitude)
-            TT <- getTrends(TrendLocation$woeid)
-            TT[,"woeid"] <- TrendLocation$country
-            names(TT) <- c("name",  "url",   "query", "country")
-            TT[, c("name","country")]
-        })
+            TT <- getTrends(TownList[TownList$name == input$town, "woeid"], cainfo = "cacert.pem")
+            TrendingTopics <- as.data.frame(TT$name)
+            names(TrendingTopics) <- paste("Trending in ", input$town, sep="")
+            return(TrendingTopics)            
+        },
+        options=list(
+                     lengthChange = FALSE    # show/hide records per page dropdown
+        )
+        )
         
         output$plot <- renderPlot({
             withProgress(message = 'Collecting tweets in progress',
                          detail = 'This may take a while...', value = 0, {
                              VectorTweet <- as.vector(r_stats()[,"text"])
                          })
-            
-            Tweet_palette <-brewer.pal(9,"Set1")
-            VectorTweet <- gsub("http\\w+", "", VectorTweet)
-            
-            TweetCorpus <- Corpus(VectorSource(VectorTweet))
-            TweetCorpus <- tm_map(TweetCorpus, tolower)
-            TweetCorpus <- tm_map(TweetCorpus, function(x) removeWords(x,c("http://t.co/*", "https://t.co/*", stopwords(input$lang))))
-            TweetCorpus <- tm_map(TweetCorpus, removePunctuation)
-            TweetCorpus <- tm_map(TweetCorpus, removeNumbers)
-            TweetCorpus <- tm_map(TweetCorpus, PlainTextDocument)
-            wordcloud(TweetCorpus,
-                      min.freq=5,max.words=500, 
-                      random.order=FALSE, 
-                      colors=Tweet_palette)
+
+            withProgress(message = 'Processing word cloud',
+                         detail = 'This may take a while...', value = 0, {
+                Tweet_palette <-brewer.pal(9,"Set1")
+                VectorTweet <- gsub("http\\w+", "", VectorTweet)
+                
+                TweetCorpus <- Corpus(VectorSource(VectorTweet))
+                TweetCorpus <- tm_map(TweetCorpus, tolower)
+                TweetCorpus <- tm_map(TweetCorpus, function(x) removeWords(x,c("http://t.co/*", "https://t.co/*", stopwords(input$lang))))
+                TweetCorpus <- tm_map(TweetCorpus, removePunctuation)
+                TweetCorpus <- tm_map(TweetCorpus, removeNumbers)
+                TweetCorpus <- tm_map(TweetCorpus, PlainTextDocument)
+                wordcloud(TweetCorpus,
+                          min.freq=5,max.words=500, 
+                          random.order=FALSE,
+                          scale = c(4,1),
+                          colors=Tweet_palette)
+            })
         })
         
         #         output$mapPlot <- renderGvis({
