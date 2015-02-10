@@ -32,6 +32,7 @@ source("sentiment/R/classify_polarity.R")
 source("sentiment/R/create_matrix.R")
 source("who-retweet.R") 
 source("cleant.txt.R")
+source("Stop.words.R")
 
 # get the world main cities and and countries WOIED (Where On Earth IDentifier)
 CountryWoeid <- fromJSON(txt = "WOEID.json", flatten =TRUE)
@@ -151,7 +152,7 @@ shinyServer(
 #                                                 content_transformer(function(x) iconv(x, to='UTF-8-MAC', sub='byte')),
 #                                                 mc.cores=1)
                              TweetCorpus <- tm_map(TweetCorpus, tolower)
-                            TweetCorpus <- tm_map(TweetCorpus, function(x) removeWords(x,c("http://t.co/*", "https://t.co/*", "RT", stopwords(input$lang))))
+                            TweetCorpus <- tm_map(TweetCorpus, function(x) removeWords(x,c("http://t.co/*", "https://t.co/*", "RT", Stop.words(input$lang))))
 
                              TweetCorpus <- tm_map(TweetCorpus, removePunctuation)
                              TweetCorpus <- tm_map(TweetCorpus, removeNumbers)
@@ -188,7 +189,7 @@ shinyServer(
                 
                 TweetCorpus <- Corpus(VectorSource(VectorTweet))
                 TweetCorpus <- tm_map(TweetCorpus, tolower)
-                TweetCorpus <- tm_map(TweetCorpus, function(x) removeWords(x,c("http://t.co/*", "https://t.co/*", "RT", stopwords(input$lang))))
+                TweetCorpus <- tm_map(TweetCorpus, function(x) removeWords(x,c("http://t.co/*", "https://t.co/*", "RT", Stop.words(input$lang))))
                 TweetCorpus <- tm_map(TweetCorpus, removePunctuation)
                 TweetCorpus <- tm_map(TweetCorpus, removeNumbers)
                 TweetCorpus <- tm_map(TweetCorpus, PlainTextDocument)
